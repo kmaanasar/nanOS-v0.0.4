@@ -4,6 +4,7 @@
 
 //================================================================================================================================================
 //                                                              Setup Function
+MS5837 pressureSensor;
 
 void setup() {
   // Initialize Serial for debugging
@@ -13,7 +14,7 @@ void setup() {
   Wire.begin();
   
   // Initialize pressure sensor
-  while (!pressureSensor.init(Wire)) {
+  while (!pressureSensor.init()) {
     Serial.println("Pressure sensor init failed!");
     Serial.println("Are SDA/SCL connected correctly?");
     Serial.println("Blue Robotics Bar30: White=SDA, Green=SCL");
