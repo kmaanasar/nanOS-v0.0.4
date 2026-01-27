@@ -4,6 +4,13 @@
 #include <EEPROM.h>
 
 //================================================================================================================================================
+//                                                WiFi Configuration - AP (Access Point) Mode
+
+const char* WIFI_SSID = "";
+const char* WIFI_PASSWORD = "";
+const char* AP_SSID = "";  // Change to your desired AP name
+
+//================================================================================================================================================
 //                                                              Setup Function
 MS5837 pressureSensor;
 
