@@ -16,10 +16,12 @@ const char* AP_SSID = "";  // Change to your desired AP name
 // GPIO Pin Assignments (adjust based on our ESP32 board)
 const int PIN_ENCODER_A = 1;      // Encoder A phase
 const int PIN_ENCODER_B = 2;      // Encoder B phase
+const int PIN_UNUSED_3 = 21;      // UNUSED
 const int PIN_SDA = 22;           // I2C SDA (Note: Wire.begin() uses default pins)
 const int PIN_SCL = 23;           // I2C SCL
 const int PIN_LIMIT_SW = 16;      // Limit Switch input
 const int PIN_LIMIT_SW_EN = 17;   // Limit Switch Enable
+const int PIN_UNUSED_8 = 19;      // UNUSED
 const int PIN_MOTOR_1 = 20;       // Motor Input 1
 const int PIN_MOTOR_2 = 18;   
 //================================================================================================================================================
