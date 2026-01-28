@@ -86,34 +86,87 @@ void IRAM_ATTR encoder_isr() {
 
 //================================================================================================================================================
 //                                                              Setup Function
-MS5837 pressureSensor;
 
 void setup() {
-  // Initialize Serial for debugging
+  // Initialize Serial
   Serial.begin(115200);
+  delay(1000);
+  Serial.println("\n\n=== NanoFloat Depth-Based Control ===");
+  
+  // Initialize EEPROM
+  EEPROM.begin(EEPROM_SIZE);
+  load_depth();
+  Serial.print("Last recorded depth: ");
+  Serial.print(current_depth);
+  Serial.println(" m");
+  
+  // Initialize GPIO Pins
+  pinMode(PIN_ENCODER_A, INPUT);
+  pinMode(PIN_ENCODER_B, INPUT);
+  pinMode(PIN_LIMIT_SW, INPUT_PULLDOWN);
+  pinMode(PIN_LIMIT_SW_EN, OUTPUT);
+  pinMode(PIN_MOTOR_1, OUTPUT);
+  pinMode(PIN_MOTOR_2, OUTPUT);
+  pinMode(PIN_UNUSED_3, OUTPUT);
+  pinMode(PIN_UNUSED_8, OUTPUT);
+  
+  // Enable limit switch
+  digitalWrite(PIN_LIMIT_SW_EN, HIGH);
+  
+  // Initialize motor to stopped
+  piston_stop();
+  
+  // Attach encoder interrupt (optional, for diagnostics)
+  attachInterrupt(digitalPinToInterrupt(PIN_ENCODER_A), encoder_isr, CHANGE);
   
   // Initialize I2C
   Wire.begin();
   
   // Initialize pressure sensor
-  while (!pressureSensor.init()) {
-    Serial.println("Pressure sensor init failed!");
-    Serial.println("Are SDA/SCL connected correctly?");
-    Serial.println("Blue Robotics Bar30: White=SDA, Green=SCL");
-    delay(5000);
+  Serial.println("Initializing pressure sensor...");
+  int attempts = 0;
+  while (!pressureSensor.init() && attempts < 10) {
+    Serial.println("Pressure sensor init failed! Retrying...");
+    delay(2000);
+    attempts++;
   }
   
-  // Set fluid density
-  pressureSensor.setFluidDensity(997);  // Freshwater in kg/m^3
+  if (attempts >= 10) {
+    Serial.println("ERROR: Could not initialize pressure sensor!");
+    Serial.println("Check connections: White=SDA, Green=SCL");
+    while(1) { delay(1000); }  // Halt - sensor is critical
+  }
   
+  pressureSensor.setFluidDensity(997);  // Freshwater (use 1029 for seawater)
   Serial.println("Pressure sensor initialized!");
-}
-
-//================================================================================================================================================
-//                                                              Main Loop
-
-void loop() {
-  // Your main code here
   
-  delay(1000);
+  // Read initial depth
+  current_depth = read_depth();
+  Serial.print("Current depth: ");
+  Serial.print(current_depth);
+  Serial.println(" m");
+  
+  // Initialize WiFi in Access Point mode
+  Serial.println("Starting WiFi Access Point...");
+  WiFi.mode(WIFI_AP);
+  if (WiFi.softAP(AP_SSID, WIFI_PASSWORD, 1, 0, 1)) {
+    Serial.println("Access Point started successfully");
+    Serial.print("AP IP address: ");
+    Serial.println(WiFi.softAPIP());
+  } else {
+    Serial.println("Access Point failed to start");
+  }
+  
+  Serial.println("\n=== NanoFloat Ready ===");
+  Serial.println("\n╔════════════════════════════════════════════╗");
+  Serial.println("║          COMPETITION MODE - TASK 4.1      ║");
+  Serial.println("╚════════════════════════════════════════════╝");
+  Serial.println("\nAvailable Commands:");
+  Serial.println("  competition_mission()  - Run full competition task");
+  Serial.println("  vertical_profile(1)    - Test single profile");
+  Serial.println("  dive_to_depth(2.5)     - Dive to specific depth");
+  Serial.println("  hold_depth(2.5, 30000) - Hold depth for time");
+  Serial.println("  surface()              - Return to surface");
+  Serial.println("  depth_test(10)         - Test sensor readings");
+  Serial.println("  motor_test()           - Test motor control\n");
 }
