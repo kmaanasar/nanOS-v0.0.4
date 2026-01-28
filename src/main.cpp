@@ -1,5 +1,6 @@
 #include <Arduino.h>
 #include <Wire.h>
+#include <WiFi.h>  
 #include "MS5837.h"
 #include <EEPROM.h>
 
