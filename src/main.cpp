@@ -72,6 +72,19 @@ void load_depth();
 void IRAM_ATTR encoder_isr();
 
 //================================================================================================================================================
+//                                                              Encoder ISR (Optional)
+
+// Interrupt Service Routine for encoder (for diagnostics only)
+void IRAM_ATTR encoder_isr() {
+  int a = digitalRead(PIN_ENCODER_A);
+  if (a != a_prev) {
+    delta++;
+    encoder_count++;
+    a_prev = a;
+  }
+}
+
+//================================================================================================================================================
 //                                                              Setup Function
 MS5837 pressureSensor;
 
