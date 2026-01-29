@@ -247,3 +247,131 @@ void load_depth() {
     current_depth = 0.0;
   }
 }
+
+//================================================================================================================================================
+//                                                              Depth-Based Movement
+
+bool dive_to_depth(float target_depth_m) {
+  Serial.print("Diving to ");
+  Serial.print(target_depth_m);
+  Serial.println(" m...");
+  
+  // Safety check
+  if (target_depth_m > MAX_DEPTH) {
+    Serial.println("ERROR: Target depth exceeds maximum safe depth!");
+    return false;
+  }
+  
+  if (target_depth_m < MIN_DEPTH) {
+    Serial.println("ERROR: Target depth below minimum!");
+    return false;
+  }
+  
+  target_depth = target_depth_m;
+  unsigned long start_time = millis();
+  
+  // Determine direction
+  current_depth = read_depth();
+  
+  if (current_depth < target_depth) {
+    // Need to go deeper - extend piston
+    Serial.println("Extending piston (diving deeper)...");
+    piston_out();
+    
+    while (current_depth < (target_depth - depth_tolerance)) {
+      current_depth = read_depth();
+      
+      // Safety checks
+      if (millis() - start_time > MAX_MOTOR_TIME) {
+        piston_stop();
+        Serial.println("ERROR: Motor timeout!");
+        return false;
+      }
+      
+      if (digitalRead(PIN_LIMIT_SW) == HIGH) {
+        piston_stop();
+        Serial.println("ERROR: Limit switch hit!");
+        return false;
+      }
+      
+      Serial.print("Current depth: ");
+      Serial.print(current_depth, 2);
+      Serial.println(" m");
+      delay(500);
+    }
+    
+  } else if (current_depth > target_depth) {
+    // Need to go shallower - retract piston
+    Serial.println("Retracting piston (ascending)...");
+    piston_in();
+    
+    while (current_depth > (target_depth + depth_tolerance)) {
+      current_depth = read_depth();
+      
+      // Safety checks
+      if (millis() - start_time > MAX_MOTOR_TIME) {
+        piston_stop();
+        Serial.println("ERROR: Motor timeout!");
+        return false;
+      }
+      
+      if (digitalRead(PIN_LIMIT_SW) == HIGH) {
+        piston_stop();
+        Serial.println("ERROR: Limit switch hit!");
+        return false;
+      }
+      
+      Serial.print("Current depth: ");
+      Serial.print(current_depth, 2);
+      Serial.println(" m");
+      delay(500);
+    }
+  }
+  
+  piston_stop();
+  current_depth = read_depth();
+  Serial.print("Reached target! Final depth: ");
+  Serial.print(current_depth, 2);
+  Serial.println(" m");
+  
+  return true;
+}
+
+bool surface() {
+  Serial.println("Surfacing...");
+  return dive_to_depth(0.0);
+}
+
+bool hold_depth(float target_depth_m, unsigned long duration_ms) {
+  Serial.print("Holding depth ");
+  Serial.print(target_depth_m);
+  Serial.print(" m for ");
+  Serial.print(duration_ms / 1000);
+  Serial.println(" seconds...");
+  
+  unsigned long start_time = millis();
+  
+  while (millis() - start_time < duration_ms) {
+    current_depth = read_depth();
+    
+    // Actively maintain depth
+    if (current_depth < (target_depth_m - depth_tolerance)) {
+      piston_out();
+      delay(200);
+      piston_stop();
+    } else if (current_depth > (target_depth_m + depth_tolerance)) {
+      piston_in();
+      delay(200);
+      piston_stop();
+    }
+    
+    Serial.print("Holding at ");
+    Serial.print(current_depth, 2);
+    Serial.println(" m");
+    delay(1000);
+  }
+  
+  piston_stop();
+  Serial.println("Hold complete");
+  return true;
+}
