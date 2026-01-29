@@ -134,7 +134,6 @@ void setup() {
   
   if (attempts >= 10) {
     Serial.println("ERROR: Could not initialize pressure sensor!");
-    Serial.println("Check connections: White=SDA, Green=SCL");
     while(1) { delay(1000); }  // Halt - sensor is critical
   }
   
@@ -147,16 +146,16 @@ void setup() {
   Serial.print(current_depth);
   Serial.println(" m");
   
-  // Initialize WiFi in Access Point mode
-  Serial.println("Starting WiFi Access Point...");
-  WiFi.mode(WIFI_AP);
-  if (WiFi.softAP(AP_SSID, WIFI_PASSWORD, 1, 0, 1)) {
-    Serial.println("Access Point started successfully");
-    Serial.print("AP IP address: ");
-    Serial.println(WiFi.softAPIP());
-  } else {
-    Serial.println("Access Point failed to start");
-  }
+//   Initialize WiFi in Access Point mode
+//   Serial.println("Starting WiFi Access Point...");
+//   WiFi.mode(WIFI_AP);
+//   if (WiFi.softAP(AP_SSID, WIFI_PASSWORD, 1, 0, 1)) {
+//     Serial.println("Access Point started successfully");
+//     Serial.print("AP IP address: ");
+//     Serial.println(WiFi.softAPIP());
+//   } else {
+//     Serial.println("Access Point failed to start");
+//   }
   
   Serial.println("\n=== NanoFloat Ready ===");
   Serial.println("\n╔════════════════════════════════════════════╗");
