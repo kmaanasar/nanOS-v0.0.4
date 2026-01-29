@@ -9,7 +9,7 @@
 
 const char* WIFI_SSID = "";
 const char* WIFI_PASSWORD = "";
-const char* AP_SSID = "";  // Change to your desired AP name
+const char* AP_SSID = "";  // Change to the desired AP name
 
 //================================================================================================================================================
 //                                                              Pin Definitions
@@ -158,17 +158,10 @@ void setup() {
 //   }
   
   Serial.println("\n=== NanoFloat Ready ===");
-  Serial.println("\n╔════════════════════════════════════════════╗");
-  Serial.println("║          COMPETITION MODE - TASK 4.1      ║");
-  Serial.println("╚════════════════════════════════════════════╝");
   Serial.println("\nAvailable Commands:");
-  Serial.println("  competition_mission()  - Run full competition task");
-  Serial.println("  vertical_profile(1)    - Test single profile");
   Serial.println("  dive_to_depth(2.5)     - Dive to specific depth");
   Serial.println("  hold_depth(2.5, 30000) - Hold depth for time");
   Serial.println("  surface()              - Return to surface");
-  Serial.println("  depth_test(10)         - Test sensor readings");
-  Serial.println("  motor_test()           - Test motor control\n");
 }
 
 //================================================================================================================================================
