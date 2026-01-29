@@ -171,3 +171,32 @@ void setup() {
   Serial.println("  depth_test(10)         - Test sensor readings");
   Serial.println("  motor_test()           - Test motor control\n");
 }
+
+//================================================================================================================================================
+//                                                              Main Loop
+
+void loop() {
+  // Continuously monitor depth
+  static unsigned long lastRead = 0;
+  if (millis() - lastRead > 1000) {  // Read every second
+    current_depth = read_depth();
+    
+    Serial.print("Depth: ");
+    Serial.print(current_depth, 2);
+    Serial.print(" m | Temp: ");
+    Serial.print(pressureSensor.temperature(), 1);
+    Serial.print(" C | Encoder: ");
+    Serial.println(encoder_count);
+    
+    save_depth();
+    lastRead = millis();
+  }
+  
+  // Check for limit switch
+  if (digitalRead(PIN_LIMIT_SW) == HIGH) {
+    piston_stop();
+    Serial.println("WARNING: Limit switch triggered!");
+  }
+  
+  delay(100);
+}
