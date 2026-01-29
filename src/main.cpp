@@ -200,3 +200,21 @@ void loop() {
   
   delay(100);
 }
+
+//================================================================================================================================================
+//                                                              Piston Control Functions
+
+void piston_out() {
+  digitalWrite(PIN_MOTOR_1, HIGH);
+  digitalWrite(PIN_MOTOR_2, LOW);
+}
+
+void piston_in() {
+  digitalWrite(PIN_MOTOR_1, LOW);
+  digitalWrite(PIN_MOTOR_2, HIGH);
+}
+
+void piston_stop() {
+  digitalWrite(PIN_MOTOR_1, LOW);
+  digitalWrite(PIN_MOTOR_2, LOW);
+}
