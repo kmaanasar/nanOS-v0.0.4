@@ -62,13 +62,13 @@ void piston_out();
 void piston_in();
 void piston_stop();
 float read_depth();
-bool dive_to_depth(float target_depth_m);
-bool surface();
+//bool dive_to_depth(float target_depth_m);
+//bool surface();
 bool hold_depth(float target_depth_m, unsigned long duration_ms);
-void auto_dive_cycle();
-void depth_test(int repetitions);
-void motor_test();
-void save_depth();
+//void auto_dive_cycle();
+//void depth_test(int repetitions);
+//void motor_test();
+//void save_depth();
 void load_depth();
 void IRAM_ATTR encoder_isr();
 
@@ -217,4 +217,33 @@ void piston_in() {
 void piston_stop() {
   digitalWrite(PIN_MOTOR_1, LOW);
   digitalWrite(PIN_MOTOR_2, LOW);
+}
+
+//================================================================================================================================================
+//                                                              Depth Reading
+
+float read_depth() {
+  pressureSensor.read();
+  float depth = pressureSensor.depth();
+  
+  // Clamp to reasonable values
+  if (depth < 0) depth = 0;
+  if (depth > MAX_DEPTH) depth = MAX_DEPTH;
+  
+  return depth;
+}
+
+//================================================================================================================================================
+//                                                              Depth Management
+
+void save_depth() {
+  EEPROM.put(EEPROM_DEPTH_ADDR, current_depth);
+  EEPROM.commit();
+}
+
+void load_depth() {
+  EEPROM.get(EEPROM_DEPTH_ADDR, current_depth);
+  if (current_depth < 0 || current_depth > MAX_DEPTH) {
+    current_depth = 0.0;
+  }
 }
