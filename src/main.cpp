@@ -64,11 +64,11 @@ void piston_stop();
 float read_depth();
 //bool dive_to_depth(float target_depth_m);
 //bool surface();
-bool hold_depth(float target_depth_m, unsigned long duration_ms);
+//bool hold_depth(float target_depth_m, unsigned long duration_ms);
 //void auto_dive_cycle();
 //void depth_test(int repetitions);
 //void motor_test();
-//void save_depth();
+void save_depth();
 void load_depth();
 void IRAM_ATTR encoder_isr();
 
