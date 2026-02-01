@@ -3,13 +3,7 @@
 #include <WiFi.h>  
 #include "MS5837.h"
 #include <EEPROM.h>
-
-//================================================================================================================================================
-//                                                WiFi Configuration - AP (Access Point) Mode
-
-const char* WIFI_SSID = "";
-const char* WIFI_PASSWORD = "";
-const char* AP_SSID = "";  // Change to the desired AP name
+#include "config.h"
 
 //================================================================================================================================================
 //                                                              Pin Definitions
@@ -146,16 +140,16 @@ void setup() {
   Serial.print(current_depth);
   Serial.println(" m");
   
-//   Initialize WiFi in Access Point mode
-//   Serial.println("Starting WiFi Access Point...");
-//   WiFi.mode(WIFI_AP);
-//   if (WiFi.softAP(AP_SSID, WIFI_PASSWORD, 1, 0, 1)) {
-//     Serial.println("Access Point started successfully");
-//     Serial.print("AP IP address: ");
-//     Serial.println(WiFi.softAPIP());
-//   } else {
-//     Serial.println("Access Point failed to start");
-//   }
+  // Initialize WiFi in Access Point mode
+  Serial.println("Starting WiFi Access Point...");
+  WiFi.mode(WIFI_AP);
+  if (WiFi.softAP(AP_SSID, WIFI_PASSWORD, 1, 0, 1)) {
+    Serial.println("Access Point started successfully");
+    Serial.print("AP IP address: ");
+    Serial.println(WiFi.softAPIP());
+  } else {
+    Serial.println("Access Point failed to start");
+  }
   
   Serial.println("\n=== NanoFloat Ready ===");
   Serial.println("\nAvailable Commands:");
