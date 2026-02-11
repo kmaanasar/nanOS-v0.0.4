@@ -49,6 +49,11 @@ MS5837 pressureSensor;
 const int EEPROM_DEPTH_ADDR = 0;
 const int EEPROM_SIZE = 512;
 
+//Telnet server
+WiFiServer telnetServer(23);
+WiFiClient telnetClient;
+bool telnetConnected = false;
+
 //================================================================================================================================================
 //                                                              Function Prototypes
 
@@ -62,6 +67,7 @@ void IRAM_ATTR encoder_isr();
 bool dive_to_depth(float target_depth_m);
 bool surface();
 bool hold_depth(float target_depth_m, unsigned long duration_ms);
+void handleTelnet(); 
 //void auto_dive_cycle();
 //void depth_test(int repetitions);
 //void motor_test();
@@ -151,6 +157,15 @@ void setup() {
     Serial.println("Access Point failed to start");
   }
   
+  // Start Telnet server
+  telnetServer.begin();
+  telnetServer.setNoDelay(true);
+  Serial.println("\nTelnet server started on port 23");
+  Serial.print("Connect via: telnet ");
+  Serial.println(WiFi.softAPIP());
+  Serial.println("  (Windows: Enable Telnet Client in Windows Features)");
+  Serial.println("  (Mac/Linux: telnet 192.168.4.1 23)");
+  
   Serial.println("\n=== NanoFloat Ready ===");
   Serial.println("\nAvailable Commands:");
   Serial.println("  dive_to_depth(2.5)     - Dive to specific depth");
@@ -159,9 +174,71 @@ void setup() {
 }
 
 //================================================================================================================================================
+//                                                              Telnet Helper Functions
+
+// Print to both Serial and Telnet
+void printBoth(const String &message) {
+  Serial.print(message);
+  if (telnetConnected && telnetClient.connected()) {
+    telnetClient.print(message);
+  }
+}
+
+void printlnBoth(const String &message) {
+  Serial.println(message);
+  if (telnetConnected && telnetClient.connected()) {
+    telnetClient.println(message);
+  }
+}
+
+void handleTelnet() {
+  // Check for new telnet client
+  if (telnetServer.hasClient()) {
+    // Disconnect existing client if new one connects
+    if (telnetClient && telnetClient.connected()) {
+      telnetClient.stop();
+    }
+    telnetClient = telnetServer.available();
+    telnetConnected = true;
+    
+    // Welcome message
+    Serial.println("\n=== NanoFloat Telnet Console ===");
+    
+    // Show current status
+    telnetClient.print("Current depth: ");
+    telnetClient.print(current_depth, 2);
+    telnetClient.println(" m");
+    
+    telnetClient.print("Temperature: ");
+    telnetClient.print(pressureSensor.temperature(), 1);
+    telnetClient.println(" C");
+    
+    telnetClient.print("Pressure: ");
+    telnetClient.print(pressureSensor.pressure(), 2);
+    telnetClient.println(" mbar");
+    
+    telnetClient.print("Encoder count: ");
+    telnetClient.println(encoder_count);
+    
+    telnetClient.println("\nMonitoring pressure sensor data...");
+    telnetClient.println("(Updates every second)\n");
+  }
+  
+  // Check if client disconnected
+  if (telnetClient && !telnetClient.connected()) {
+    telnetClient.stop();
+    telnetConnected = false;
+    Serial.println("Telnet client disconnected");
+  }
+}
+
+//================================================================================================================================================
 //                                                              Main Loop
 
 void loop() {
+  // Handle telnet connections
+  handleTelnet();
+  
   // Continuously monitor depth
   static unsigned long lastRead = 0;
   if (millis() - lastRead > 1000) {  // Read every second
