@@ -244,12 +244,15 @@ void loop() {
   if (millis() - lastRead > 1000) {  // Read every second
     current_depth = read_depth();
     
-    Serial.print("Depth: ");
-    Serial.print(current_depth, 2);
-    Serial.print(" m | Temp: ");
-    Serial.print(pressureSensor.temperature(), 1);
-    Serial.print(" C | Encoder: ");
-    Serial.println(encoder_count);
+    // Print to BOTH Serial and Telnet
+    printBoth("Depth: ");
+    printBoth(String(current_depth, 2));
+    printBoth(" m | Temp: ");
+    printBoth(String(pressureSensor.temperature(), 1));
+    printBoth(" C | Pressure: ");
+    printBoth(String(pressureSensor.pressure(), 2));
+    printBoth(" mbar | Encoder: ");
+    printlnBoth(String(encoder_count));
     
     save_depth();
     lastRead = millis();
@@ -258,7 +261,7 @@ void loop() {
   // Check for limit switch
   if (digitalRead(PIN_LIMIT_SW) == HIGH) {
     piston_stop();
-    Serial.println("WARNING: Limit switch triggered!");
+    printlnBoth("WARNING: Limit switch triggered!");  // Use printlnBoth here too
   }
   
   delay(100);
