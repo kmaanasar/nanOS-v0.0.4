@@ -51,9 +51,10 @@ volatile int encoder_count = 0;
 volatile int delta = 0;
 volatile int a_prev = 0;
 
-// Dive status
+// Competition status
 bool good_dive = true;
 bool dive_again = true;
+bool mission_complete = false;
 
 // Pressure sensor object (direct I2C)
 MS5837 pressureSensor;
@@ -79,6 +80,8 @@ void load_depth();
 bool dive_to_depth(float target_depth_m);
 bool surface();
 bool hold_depth(float target_depth_m, unsigned long duration_ms);
+bool vertical_profile(int profile_num);
+void competition_mission();
 void handleTelnet();
 void printBoth(const String &message);
 void printlnBoth(const String &message);
@@ -91,18 +94,20 @@ void setup() {
   // Initialize Serial
   Serial.begin(115200);
   delay(1000);
-  Serial.println("\n\n=== NanoFloat Depth-Based Control with MCP23017 ===");
+  Serial.println("\n\n╔════════════════════════════════════════════╗");
+  Serial.println("║   NanoFloat Competition Mode - Task 4.1   ║");
+  Serial.println("╚════════════════════════════════════════════╝");
   
   // Initialize I2C bus
   Wire.begin();
   
   // Initialize MCP23017 GPIO Expander
-  Serial.println("Initializing MCP23017 GPIO expander...");
+  Serial.println("\nInitializing MCP23017 GPIO expander...");
   if (!mcp.begin_I2C(MCP_I2C_ADDRESS)) {
     Serial.println("ERROR: MCP23017 not found! Check I2C connections and address.");
     while (1) { delay(1000); }  // Halt - expander is critical
   }
-  Serial.println("MCP23017 initialized!");
+  Serial.println("✓ MCP23017 initialized!");
   
   // Configure MCP23017 pins with pull-ups on inputs
   mcp.pinMode(MCP_ENCODER_A, INPUT_PULLUP);
@@ -126,7 +131,7 @@ void setup() {
   Serial.println(" m");
   
   // Initialize pressure sensor
-  Serial.println("Initializing MS5837 pressure sensor...");
+  Serial.println("\nInitializing MS5837 pressure sensor...");
   int attempts = 0;
   while (!pressureSensor.init() && attempts < 10) {
     Serial.println("Pressure sensor init failed! Retrying...");
@@ -141,7 +146,7 @@ void setup() {
   }
   
   pressureSensor.setFluidDensity(997);  // Freshwater (use 1029 for seawater)
-  Serial.println("Pressure sensor initialized!");
+  Serial.println("✓ Pressure sensor initialized!");
   
   // Read initial depth
   current_depth = read_depth();
@@ -150,30 +155,28 @@ void setup() {
   Serial.println(" m");
   
   // Initialize WiFi in Access Point mode
-  Serial.println("Starting WiFi Access Point...");
+  Serial.println("\nStarting WiFi Access Point...");
   WiFi.mode(WIFI_AP);
   if (WiFi.softAP(AP_SSID, WIFI_PASSWORD, 1, 0, 1)) {
-    Serial.println("Access Point started successfully");
+    Serial.println("✓ Access Point started successfully");
     Serial.print("AP IP address: ");
     Serial.println(WiFi.softAPIP());
   } else {
-    Serial.println("Access Point failed to start");
+    Serial.println("✗ Access Point failed to start");
   }
   
   // Start Telnet server
   telnetServer.begin();
   telnetServer.setNoDelay(true);
-  Serial.println("\nTelnet server started on port 23");
+  Serial.println("\n✓ Telnet server started on port 23");
   Serial.print("Connect via: telnet ");
   Serial.println(WiFi.softAPIP());
-  Serial.println("  (Windows: Enable Telnet Client in Windows Features)");
-  Serial.println("  (Mac/Linux: telnet 192.168.4.1 23)");
   
-  Serial.println("\n=== NanoFloat Ready ===");
-  Serial.println("\nAvailable Commands:");
-  Serial.println("  dive_to_depth(2.5)     - Dive to specific depth");
-  Serial.println("  hold_depth(2.5, 30000) - Hold depth for time");
-  Serial.println("  surface()              - Return to surface\n");
+  Serial.println("\n╔════════════════════════════════════════════╗");
+  Serial.println("║          SYSTEM READY FOR MISSION         ║");
+  Serial.println("╚════════════════════════════════════════════╝");
+  Serial.println("\nMission will auto-start in 10 seconds...");
+  Serial.println("(Or call competition_mission() manually)\n");
 }
 
 //================================================================================================================================================
@@ -206,7 +209,7 @@ void handleTelnet() {
     
     // Welcome message
     telnetClient.println("\n╔════════════════════════════════════════════╗");
-    telnetClient.println("║    NanoFloat Telnet Console - MCP23017    ║");
+    telnetClient.println("║    NanoFloat Telnet Console - Task 4.1    ║");
     telnetClient.println("╚════════════════════════════════════════════╝\n");
     
     // Show current status
@@ -225,15 +228,17 @@ void handleTelnet() {
     telnetClient.print("Encoder count: ");
     telnetClient.println(encoder_count);
     
-    telnetClient.println("\nMonitoring pressure sensor data...");
-    telnetClient.println("(Updates every second)\n");
+    telnetClient.print("Mission status: ");
+    telnetClient.println(mission_complete ? "COMPLETE" : "IN PROGRESS");
+    
+    telnetClient.println("\nMonitoring...\n");
   }
   
   // Check if client disconnected
   if (telnetClient && !telnetClient.connected()) {
     telnetClient.stop();
     telnetConnected = false;
-    printlnBoth("Telnet client disconnected");
+    Serial.println("Telnet client disconnected");
   }
 }
 
@@ -259,8 +264,15 @@ void loop() {
   // Handle telnet connections
   handleTelnet();
   
-  // Read encoder (since we can't use interrupts with MCP23017 easily)
+  // Read encoder
   read_encoder();
+  
+  // Auto-start competition mission after 10 seconds
+  static bool mission_started = false;
+  if (millis() > 10000 && !mission_started && !mission_complete) {
+    mission_started = true;
+    competition_mission();
+  }
   
   // Continuously monitor depth
   static unsigned long lastRead = 0;
@@ -287,7 +299,7 @@ void loop() {
     printlnBoth("WARNING: Limit switch triggered!");
   }
   
-  delay(10);  // Small delay for stability
+  delay(10);
 }
 
 //================================================================================================================================================
@@ -419,7 +431,7 @@ bool dive_to_depth(float target_depth_m) {
   
   piston_stop();
   current_depth = read_depth();
-  printBoth("Reached target! Final depth: ");
+  printBoth("✓ Reached target! Final depth: ");
   printBoth(String(current_depth, 2));
   printlnBoth(" m");
   
@@ -461,6 +473,153 @@ bool hold_depth(float target_depth_m, unsigned long duration_ms) {
   }
   
   piston_stop();
-  printlnBoth("Hold complete");
+  printlnBoth("✓ Hold complete");
   return true;
+}
+
+//================================================================================================================================================
+//                                                              Competition Functions
+
+// Single vertical profile for Task 4.1
+bool vertical_profile(int profile_num) {
+  printlnBoth("");
+  printBoth("╔════════════════════════════════════════════╗");
+  printlnBoth("");
+  printBoth("║       VERTICAL PROFILE ");
+  printBoth(String(profile_num));
+  printlnBoth("                 ║");
+  printBoth("╚════════════════════════════════════════════╝");
+  printlnBoth("");
+  
+  // Phase 1: Dive to 2.5 meters
+  printlnBoth("\n[Phase 1] Diving to 2.5 meters...");
+  if (!dive_to_depth(2.5)) {
+    printlnBoth("✗ ERROR: Failed to reach 2.5m!");
+    return false;
+  }
+  printlnBoth("✓ Reached 2.5m");
+  
+  // Phase 2: Hold at 2.5 meters for 30 seconds
+  printlnBoth("\n[Phase 2] Holding at 2.5 meters for 30 seconds...");
+  if (!hold_depth(2.5, 30000)) {
+    printlnBoth("✗ ERROR: Failed to hold 2.5m!");
+    return false;
+  }
+  printlnBoth("✓ Held 2.5m for 30 seconds");
+  
+  // Phase 3: Ascend to 0.4 meters (40 cm)
+  printlnBoth("\n[Phase 3] Ascending to 0.4 meters (40 cm)...");
+  if (!dive_to_depth(0.4)) {
+    printlnBoth("✗ ERROR: Failed to reach 0.4m!");
+    return false;
+  }
+  printlnBoth("✓ Reached 0.4m");
+  
+  // Phase 4: Hold at 0.4 meters for 30 seconds
+  printlnBoth("\n[Phase 4] Holding at 0.4 meters for 30 seconds...");
+  if (!hold_depth(0.4, 30000)) {
+    printlnBoth("✗ ERROR: Failed to hold 0.4m!");
+    return false;
+  }
+  printlnBoth("✓ Held 0.4m for 30 seconds");
+  
+  // Check if float broke surface (penalty condition)
+  current_depth = read_depth();
+  if (current_depth < 0.1) {  // Less than 10cm = broke surface
+    printlnBoth("⚠ WARNING: Float may have broken surface!");
+  }
+  
+  printlnBoth("");
+  printBoth("✓ VERTICAL PROFILE ");
+  printBoth(String(profile_num));
+  printlnBoth(" COMPLETE");
+  printlnBoth("");
+  
+  return true;
+}
+
+// Complete competition mission for Task 4.1
+void competition_mission() {
+  printlnBoth("\n\n");
+  printlnBoth("╔════════════════════════════════════════════╗");
+  printlnBoth("║                                            ║");
+  printlnBoth("║   STARTING COMPETITION MISSION - TASK 4.1  ║");
+  printlnBoth("║                                            ║");
+  printlnBoth("╚════════════════════════════════════════════╝");
+  printlnBoth("");
+  
+  // Step 1: Communicate with station before descending
+  printlnBoth("\n[1/3] Attempting to communicate with station...");
+  WiFi.mode(WIFI_STA);
+  WiFi.begin(WIFI_SSID, WIFI_PASSWORD);
+  
+  unsigned long startAttempt = millis();
+  bool station_connected = false;
+  
+  while (WiFi.status() != WL_CONNECTED && millis() - startAttempt < 15000) {
+    printBoth(".");
+    delay(500);
+  }
+  printlnBoth("");
+  
+  if (WiFi.status() == WL_CONNECTED) {
+    printlnBoth("✓ Station communication successful!");
+    station_connected = true;
+  } else {
+    printlnBoth("✗ Station communication FAILED!");
+    printlnBoth("Aborting mission - cannot proceed without station contact");
+    WiFi.mode(WIFI_AP);
+    return;
+  }
+  
+  // Disconnect from station, switch back to AP mode
+  WiFi.mode(WIFI_AP);
+  delay(2000);
+  
+  // Step 2: Execute Vertical Profile 1
+  printlnBoth("\n[2/3] Executing Vertical Profile 1...");
+  delay(2000);
+  bool profile1_success = vertical_profile(1);
+  
+  if (profile1_success) {
+    printlnBoth("\n✓ VERTICAL PROFILE 1 COMPLETE");
+  } else {
+    printlnBoth("\n✗ VERTICAL PROFILE 1 FAILED");
+  }
+  
+  // Wait between profiles
+  printlnBoth("\nWaiting 10 seconds before Profile 2...");
+  delay(10000);
+  
+  // Step 3: Execute Vertical Profile 2
+  printlnBoth("\n[3/3] Executing Vertical Profile 2...");
+  delay(2000);
+  bool profile2_success = vertical_profile(2);
+  
+  if (profile2_success) {
+    printlnBoth("\n✓ VERTICAL PROFILE 2 COMPLETE");
+  } else {
+    printlnBoth("\n✗ VERTICAL PROFILE 2 FAILED");
+  }
+  
+  // Mission complete
+  printlnBoth("\n\n");
+  printlnBoth("╔════════════════════════════════════════════╗");
+  printlnBoth("║                                            ║");
+  printlnBoth("║      COMPETITION MISSION COMPLETE!        ║");
+  printlnBoth("║                                            ║");
+  printlnBoth("╚════════════════════════════════════════════╝");
+  
+  // Summary
+  printlnBoth("\n═══════════ MISSION SUMMARY ═══════════");
+  printBoth("Station Communication: ");
+  printlnBoth(station_connected ? "✓ SUCCESS" : "✗ FAILED");
+  printBoth("Vertical Profile 1: ");
+  printlnBoth(profile1_success ? "✓ SUCCESS" : "✗ FAILED");
+  printBoth("Vertical Profile 2: ");
+  printlnBoth(profile2_success ? "✓ SUCCESS" : "✗ FAILED");
+  printlnBoth("════════════════════════════════════════");
+  printlnBoth("");
+  
+  mission_complete = true;
 }
