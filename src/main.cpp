@@ -1,37 +1,50 @@
 #include <Arduino.h>
 #include <Wire.h>
-#include <WiFi.h>  
+#include <WiFi.h>
 #include "MS5837.h"
 #include <EEPROM.h>
 #include "config.h"
+#include <Adafruit_MCP23X17.h>
 
 //================================================================================================================================================
-//                                                              Pin Definitions
+//                                                              I2C GPIO Expander Setup
 
-// GPIO Pin Assignments (adjust based on our ESP32 board)
-const int PIN_ENCODER_A = 1;      // Encoder A phase (optional, back-up for diagnostics)
-const int PIN_ENCODER_B = 2;      // Encoder B phase (optional, back-up for diagnostics)
-const int PIN_UNUSED_3 = 21;      // UNUSED
-const int PIN_SDA = 22;           // I2C SDA (Note: Wire.begin() uses default pins)
-const int PIN_SCL = 23;           // I2C SCL
-const int PIN_LIMIT_SW = 16;      // Limit Switch input
-const int PIN_LIMIT_SW_EN = 17;   // Limit Switch Enable
-const int PIN_UNUSED_8 = 19;      // UNUSED
-const int PIN_MOTOR_1 = 20;       // Motor Input 1
-const int PIN_MOTOR_2 = 18;   
+// MCP23017 I2C GPIO Expander
+Adafruit_MCP23X17 mcp;
+
+// Pin definitions on MCP23017 (0-15)
+const int MCP_ENCODER_A = 0;      // Encoder A phase
+const int MCP_ENCODER_B = 1;      // Encoder B phase
+const int MCP_MOTOR_1 = 2;        // Motor Input 1
+const int MCP_MOTOR_2 = 3;        // Motor Input 2
+const int MCP_LIMIT_SW = 4;       // Limit Switch input
+const int MCP_LIMIT_SW_EN = 5;    // Limit Switch Enable
+const int MCP_UNUSED_6 = 6;       // Available for future use
+const int MCP_UNUSED_7 = 7;       // Available for future use
+const int MCP_UNUSED_8 = 8;       // Available for future use
+const int MCP_UNUSED_9 = 9;       // Available for future use
+const int MCP_UNUSED_10 = 10;     // Available for future use
+const int MCP_UNUSED_11 = 11;     // Available for future use
+const int MCP_UNUSED_12 = 12;     // Available for future use
+const int MCP_UNUSED_13 = 13;     // Available for future use
+const int MCP_UNUSED_14 = 14;     // Available for future use
+const int MCP_UNUSED_15 = 15;     // Available for future use
+
+// MCP23017 I2C Address (default is 0x20, check your hardware)
+const uint8_t MCP_I2C_ADDRESS = 0x20;
 
 //================================================================================================================================================
 //                                                              Global Variables
 
 // Depth control parameters
-float current_depth = 0.0;        // Current depth in meters
-float target_depth = 0.0;         // Target depth in meters
-float depth_tolerance = 0.2;      // Acceptable depth error in meters (20 cm)
+float current_depth = 0.0;
+float target_depth = 0.0;
+float depth_tolerance = 0.2;
 
 // Safety limits
-const float MAX_DEPTH = 30.0;     // Maximum safe depth in meters
-const float MIN_DEPTH = 0.0;      // Minimum depth (surface)
-const unsigned long MAX_MOTOR_TIME = 120000;  // Max motor run time: 2 minutes
+const float MAX_DEPTH = 30.0;
+const float MIN_DEPTH = 0.0;
+const unsigned long MAX_MOTOR_TIME = 120000;
 
 // Encoder tracking (optional, for diagnostics only)
 volatile int encoder_count = 0;
@@ -42,14 +55,14 @@ volatile int a_prev = 0;
 bool good_dive = true;
 bool dive_again = true;
 
-// Pressure sensor object
+// Pressure sensor object (direct I2C)
 MS5837 pressureSensor;
 
 // EEPROM for storing last known depth
 const int EEPROM_DEPTH_ADDR = 0;
 const int EEPROM_SIZE = 512;
 
-//Telnet server
+// Telnet server
 WiFiServer telnetServer(23);
 WiFiClient telnetClient;
 bool telnetConnected = false;
@@ -63,27 +76,13 @@ void piston_stop();
 float read_depth();
 void save_depth();
 void load_depth();
-void IRAM_ATTR encoder_isr();
 bool dive_to_depth(float target_depth_m);
 bool surface();
 bool hold_depth(float target_depth_m, unsigned long duration_ms);
-void handleTelnet(); 
-//void auto_dive_cycle();
-//void depth_test(int repetitions);
-//void motor_test();
-
-//================================================================================================================================================
-//                                                              Encoder ISR (Optional)
-
-// Interrupt Service Routine for encoder (for diagnostics only)
-void IRAM_ATTR encoder_isr() {
-  int a = digitalRead(PIN_ENCODER_A);
-  if (a != a_prev) {
-    delta++;
-    encoder_count++;
-    a_prev = a;
-  }
-}
+void handleTelnet();
+void printBoth(const String &message);
+void printlnBoth(const String &message);
+void read_encoder();
 
 //================================================================================================================================================
 //                                                              Setup Function
@@ -92,7 +91,32 @@ void setup() {
   // Initialize Serial
   Serial.begin(115200);
   delay(1000);
-  Serial.println("\n\n=== NanoFloat Depth-Based Control ===");
+  Serial.println("\n\n=== NanoFloat Depth-Based Control with MCP23017 ===");
+  
+  // Initialize I2C bus
+  Wire.begin();
+  
+  // Initialize MCP23017 GPIO Expander
+  Serial.println("Initializing MCP23017 GPIO expander...");
+  if (!mcp.begin_I2C(MCP_I2C_ADDRESS)) {
+    Serial.println("ERROR: MCP23017 not found! Check I2C connections and address.");
+    while (1) { delay(1000); }  // Halt - expander is critical
+  }
+  Serial.println("MCP23017 initialized!");
+  
+  // Configure MCP23017 pins with pull-ups on inputs
+  mcp.pinMode(MCP_ENCODER_A, INPUT_PULLUP);
+  mcp.pinMode(MCP_ENCODER_B, INPUT_PULLUP);
+  mcp.pinMode(MCP_MOTOR_1, OUTPUT);
+  mcp.pinMode(MCP_MOTOR_2, OUTPUT);
+  mcp.pinMode(MCP_LIMIT_SW, INPUT_PULLUP);
+  mcp.pinMode(MCP_LIMIT_SW_EN, OUTPUT);
+  
+  // Enable limit switch
+  mcp.digitalWrite(MCP_LIMIT_SW_EN, HIGH);
+  
+  // Initialize motor to stopped
+  piston_stop();
   
   // Initialize EEPROM
   EEPROM.begin(EEPROM_SIZE);
@@ -101,30 +125,8 @@ void setup() {
   Serial.print(current_depth);
   Serial.println(" m");
   
-  // Initialize GPIO Pins
-  pinMode(PIN_ENCODER_A, INPUT);
-  pinMode(PIN_ENCODER_B, INPUT);
-  pinMode(PIN_LIMIT_SW, INPUT_PULLDOWN);
-  pinMode(PIN_LIMIT_SW_EN, OUTPUT);
-  pinMode(PIN_MOTOR_1, OUTPUT);
-  pinMode(PIN_MOTOR_2, OUTPUT);
-  pinMode(PIN_UNUSED_3, OUTPUT);
-  pinMode(PIN_UNUSED_8, OUTPUT);
-  
-  // Enable limit switch
-  digitalWrite(PIN_LIMIT_SW_EN, HIGH);
-  
-  // Initialize motor to stopped
-  piston_stop();
-  
-  // Attach encoder interrupt (optional, for diagnostics)
-  attachInterrupt(digitalPinToInterrupt(PIN_ENCODER_A), encoder_isr, CHANGE);
-  
-  // Initialize I2C
-  Wire.begin();
-  
   // Initialize pressure sensor
-  Serial.println("Initializing pressure sensor...");
+  Serial.println("Initializing MS5837 pressure sensor...");
   int attempts = 0;
   while (!pressureSensor.init() && attempts < 10) {
     Serial.println("Pressure sensor init failed! Retrying...");
@@ -134,6 +136,7 @@ void setup() {
   
   if (attempts >= 10) {
     Serial.println("ERROR: Could not initialize pressure sensor!");
+    Serial.println("Check connections: White=SDA, Green=SCL");
     while(1) { delay(1000); }  // Halt - sensor is critical
   }
   
@@ -170,7 +173,7 @@ void setup() {
   Serial.println("\nAvailable Commands:");
   Serial.println("  dive_to_depth(2.5)     - Dive to specific depth");
   Serial.println("  hold_depth(2.5, 30000) - Hold depth for time");
-  Serial.println("  surface()              - Return to surface");
+  Serial.println("  surface()              - Return to surface\n");
 }
 
 //================================================================================================================================================
@@ -202,7 +205,9 @@ void handleTelnet() {
     telnetConnected = true;
     
     // Welcome message
-    Serial.println("\n=== NanoFloat Telnet Console ===");
+    telnetClient.println("\n╔════════════════════════════════════════════╗");
+    telnetClient.println("║    NanoFloat Telnet Console - MCP23017    ║");
+    telnetClient.println("╚════════════════════════════════════════════╝\n");
     
     // Show current status
     telnetClient.print("Current depth: ");
@@ -228,7 +233,22 @@ void handleTelnet() {
   if (telnetClient && !telnetClient.connected()) {
     telnetClient.stop();
     telnetConnected = false;
-    Serial.println("Telnet client disconnected");
+    printlnBoth("Telnet client disconnected");
+  }
+}
+
+//================================================================================================================================================
+//                                                              Encoder Reading
+
+// Read encoder state from MCP23017
+void read_encoder() {
+  static int last_a = 0;
+  
+  int a = mcp.digitalRead(MCP_ENCODER_A);
+  
+  if (a != last_a) {
+    encoder_count++;
+    last_a = a;
   }
 }
 
@@ -239,12 +259,15 @@ void loop() {
   // Handle telnet connections
   handleTelnet();
   
+  // Read encoder (since we can't use interrupts with MCP23017 easily)
+  read_encoder();
+  
   // Continuously monitor depth
   static unsigned long lastRead = 0;
   if (millis() - lastRead > 1000) {  // Read every second
     current_depth = read_depth();
     
-    // Print to BOTH Serial and Telnet
+    // Print to both Serial and Telnet
     printBoth("Depth: ");
     printBoth(String(current_depth, 2));
     printBoth(" m | Temp: ");
@@ -259,30 +282,30 @@ void loop() {
   }
   
   // Check for limit switch
-  if (digitalRead(PIN_LIMIT_SW) == HIGH) {
+  if (mcp.digitalRead(MCP_LIMIT_SW) == HIGH) {
     piston_stop();
-    printlnBoth("WARNING: Limit switch triggered!");  // Use printlnBoth here too
+    printlnBoth("WARNING: Limit switch triggered!");
   }
   
-  delay(100);
+  delay(10);  // Small delay for stability
 }
 
 //================================================================================================================================================
 //                                                              Piston Control Functions
 
 void piston_out() {
-  digitalWrite(PIN_MOTOR_1, HIGH);
-  digitalWrite(PIN_MOTOR_2, LOW);
+  mcp.digitalWrite(MCP_MOTOR_1, HIGH);
+  mcp.digitalWrite(MCP_MOTOR_2, LOW);
 }
 
 void piston_in() {
-  digitalWrite(PIN_MOTOR_1, LOW);
-  digitalWrite(PIN_MOTOR_2, HIGH);
+  mcp.digitalWrite(MCP_MOTOR_1, LOW);
+  mcp.digitalWrite(MCP_MOTOR_2, HIGH);
 }
 
 void piston_stop() {
-  digitalWrite(PIN_MOTOR_1, LOW);
-  digitalWrite(PIN_MOTOR_2, LOW);
+  mcp.digitalWrite(MCP_MOTOR_1, LOW);
+  mcp.digitalWrite(MCP_MOTOR_2, LOW);
 }
 
 //================================================================================================================================================
@@ -318,18 +341,18 @@ void load_depth() {
 //                                                              Depth-Based Movement
 
 bool dive_to_depth(float target_depth_m) {
-  Serial.print("Diving to ");
-  Serial.print(target_depth_m);
-  Serial.println(" m...");
+  printBoth("Diving to ");
+  printBoth(String(target_depth_m));
+  printlnBoth(" m...");
   
   // Safety check
   if (target_depth_m > MAX_DEPTH) {
-    Serial.println("ERROR: Target depth exceeds maximum safe depth!");
+    printlnBoth("ERROR: Target depth exceeds maximum safe depth!");
     return false;
   }
   
   if (target_depth_m < MIN_DEPTH) {
-    Serial.println("ERROR: Target depth below minimum!");
+    printlnBoth("ERROR: Target depth below minimum!");
     return false;
   }
   
@@ -341,7 +364,7 @@ bool dive_to_depth(float target_depth_m) {
   
   if (current_depth < target_depth) {
     // Need to go deeper - extend piston
-    Serial.println("Extending piston (diving deeper)...");
+    printlnBoth("Extending piston (diving deeper)...");
     piston_out();
     
     while (current_depth < (target_depth - depth_tolerance)) {
@@ -350,25 +373,25 @@ bool dive_to_depth(float target_depth_m) {
       // Safety checks
       if (millis() - start_time > MAX_MOTOR_TIME) {
         piston_stop();
-        Serial.println("ERROR: Motor timeout!");
+        printlnBoth("ERROR: Motor timeout!");
         return false;
       }
       
-      if (digitalRead(PIN_LIMIT_SW) == HIGH) {
+      if (mcp.digitalRead(MCP_LIMIT_SW) == HIGH) {
         piston_stop();
-        Serial.println("ERROR: Limit switch hit!");
+        printlnBoth("ERROR: Limit switch hit!");
         return false;
       }
       
-      Serial.print("Current depth: ");
-      Serial.print(current_depth, 2);
-      Serial.println(" m");
+      printBoth("Current depth: ");
+      printBoth(String(current_depth, 2));
+      printlnBoth(" m");
       delay(500);
     }
     
   } else if (current_depth > target_depth) {
     // Need to go shallower - retract piston
-    Serial.println("Retracting piston (ascending)...");
+    printlnBoth("Retracting piston (ascending)...");
     piston_in();
     
     while (current_depth > (target_depth + depth_tolerance)) {
@@ -377,43 +400,43 @@ bool dive_to_depth(float target_depth_m) {
       // Safety checks
       if (millis() - start_time > MAX_MOTOR_TIME) {
         piston_stop();
-        Serial.println("ERROR: Motor timeout!");
+        printlnBoth("ERROR: Motor timeout!");
         return false;
       }
       
-      if (digitalRead(PIN_LIMIT_SW) == HIGH) {
+      if (mcp.digitalRead(MCP_LIMIT_SW) == HIGH) {
         piston_stop();
-        Serial.println("ERROR: Limit switch hit!");
+        printlnBoth("ERROR: Limit switch hit!");
         return false;
       }
       
-      Serial.print("Current depth: ");
-      Serial.print(current_depth, 2);
-      Serial.println(" m");
+      printBoth("Current depth: ");
+      printBoth(String(current_depth, 2));
+      printlnBoth(" m");
       delay(500);
     }
   }
   
   piston_stop();
   current_depth = read_depth();
-  Serial.print("Reached target! Final depth: ");
-  Serial.print(current_depth, 2);
-  Serial.println(" m");
+  printBoth("Reached target! Final depth: ");
+  printBoth(String(current_depth, 2));
+  printlnBoth(" m");
   
   return true;
 }
 
 bool surface() {
-  Serial.println("Surfacing...");
+  printlnBoth("Surfacing...");
   return dive_to_depth(0.0);
 }
 
 bool hold_depth(float target_depth_m, unsigned long duration_ms) {
-  Serial.print("Holding depth ");
-  Serial.print(target_depth_m);
-  Serial.print(" m for ");
-  Serial.print(duration_ms / 1000);
-  Serial.println(" seconds...");
+  printBoth("Holding depth ");
+  printBoth(String(target_depth_m));
+  printBoth(" m for ");
+  printBoth(String(duration_ms / 1000));
+  printlnBoth(" seconds...");
   
   unsigned long start_time = millis();
   
@@ -431,13 +454,13 @@ bool hold_depth(float target_depth_m, unsigned long duration_ms) {
       piston_stop();
     }
     
-    Serial.print("Holding at ");
-    Serial.print(current_depth, 2);
-    Serial.println(" m");
+    printBoth("Holding at ");
+    printBoth(String(current_depth, 2));
+    printlnBoth(" m");
     delay(1000);
   }
   
   piston_stop();
-  Serial.println("Hold complete");
+  printlnBoth("Hold complete");
   return true;
 }
