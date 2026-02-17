@@ -157,7 +157,7 @@ void setup() {
   // Initialize WiFi in Access Point mode
   Serial.println("\nStarting WiFi Access Point...");
   WiFi.mode(WIFI_AP);
-  if (WiFi.softAP(AP_SSID, WIFI_PASSWORD, 1, 0, 1)) {
+  if (WiFi.softAP(WIFI_SSID, WIFI_PASSWORD, 1, 0, 1)) {
     Serial.println("✓ Access Point started successfully");
     Serial.print("AP IP address: ");
     Serial.println(WiFi.softAPIP());
