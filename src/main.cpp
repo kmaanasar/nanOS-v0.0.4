@@ -5,7 +5,11 @@
 #include <EEPROM.h>
 #include "config.h"
 #include <Adafruit_MCP23X17.h>
+#include <SPI.h>
+#include <RH_RF69.h>
 
+// Define RFM69 frequency
+#define RF69_FREQ 915.0
 //================================================================================================================================================
 //                                                              I2C GPIO Expander Setup
 
@@ -19,9 +23,9 @@ const int MCP_MOTOR_1 = 2;        // Motor Input 1
 const int MCP_MOTOR_2 = 3;        // Motor Input 2
 const int MCP_LIMIT_SW = 4;       // Limit Switch input
 const int MCP_LIMIT_SW_EN = 5;    // Limit Switch Enable
-const int MCP_UNUSED_6 = 6;       // Available for future use
-const int MCP_UNUSED_7 = 7;       // Available for future use
-const int MCP_UNUSED_8 = 8;       // Available for future use
+const int MCP_RF69_CS= 6;         // RMF69 Chip Select
+const int MCP_RF69_INT = 7;       // RMF69 Interrupt
+const int MCP_RF69_RST = 8;       // RFM69 Reset
 const int MCP_UNUSED_9 = 9;       // Available for future use
 const int MCP_UNUSED_10 = 10;     // Available for future use
 const int MCP_UNUSED_11 = 11;     // Available for future use
@@ -68,6 +72,10 @@ WiFiServer telnetServer(23);
 WiFiClient telnetClient;
 bool telnetConnected = false;
 
+//RFM69 Radio
+RH_RF69 rf69(MCP_RF69_CS, MCP_RF69_INT); 
+bool radioAvailable = false;
+
 //================================================================================================================================================
 //                                                              Function Prototypes
 
@@ -86,6 +94,8 @@ void handleTelnet();
 void printBoth(const String &message);
 void printlnBoth(const String &message);
 void read_encoder();
+void initialize_radio();
+void send_radio_message(const String &data);
 
 //================================================================================================================================================
 //                                                              Setup Function
@@ -116,6 +126,9 @@ void setup() {
   mcp.pinMode(MCP_MOTOR_2, OUTPUT);
   mcp.pinMode(MCP_LIMIT_SW, INPUT_PULLUP);
   mcp.pinMode(MCP_LIMIT_SW_EN, OUTPUT);
+  mcp.pinMode(MCP_RF69_CS, OUTPUT);
+  mcp.pinMode(MCP_RF69_INT, INPUT);
+  mcp.pinMode(MCP_RF69_RST, OUTPUT);
   
   // Enable limit switch
   mcp.digitalWrite(MCP_LIMIT_SW_EN, HIGH);
@@ -177,8 +190,51 @@ void setup() {
   Serial.println("╚════════════════════════════════════════════╝");
   Serial.println("\nMission will auto-start in 10 seconds...");
   Serial.println("(Or call competition_mission() manually)\n");
+
+  // Initialize radio transmiter
+  initialize_radio();
+}  
+
+//================================================================================================================================================
+//                                                              RFM69 Radio Functions 
+
+void initialize_radio() {
+    Serial.println("\nInitializing RMF9 Radio...");
+    mcp.digitalWrite(MCP_RF69_RST, LOW);
+    delay(10);
+    mcp.digitalWrite(MCP_RF69_RST, HIGH);
+    delay(10);
+
+    if (!rf69.init()) {
+        Serial.println("RFM69 radio init failed");
+        radioAvailable = false;
+        return;
+    }
+
+    rf69.setFrequency(RF69_FREQ);
+    rf69.setTxPower(20, true); // Use higher power for higher range
+    radioAvailable = true;
+    Serial.println("RFM69 radio initalized OK!");
 }
 
+void transmitRadioData(const String &data) {
+  if (radioAvailable) {
+    rf69.send((uint8_t *) data.c_str(), data.length());
+    rf69.waitPacketSent();
+    Serial.println("Transmitted data: ");
+    Serial.print("Current depth: ");
+    Serial.print(current_depth, 2);
+    Serial.print(" m | Temp: ");
+    Serial.print(pressureSensor.temperature(), 1);
+    Serial.print(" C | Pressure: ");
+    Serial.print(pressureSensor.pressure(), 2);
+    Serial.print(" mbar | Encoder: ");
+    Serial.print(encoder_count);
+    Serial.println(data);
+  } else {
+    Serial.println("Radio not available, cannot transmit data");
+  }
+}
 //================================================================================================================================================
 //                                                              Telnet Helper Functions
 
@@ -278,6 +334,14 @@ void loop() {
   static unsigned long lastRead = 0;
   if (millis() - lastRead > 1000) {  // Read every second
     current_depth = read_depth();
+
+    // Transmit data to radio
+    String dataToTransmit = String(current_depth, 2);
+    transmitRadioData(dataToTransmit);
+
+    if (!radioAvailable) {
+      printlnBoth("Depth:" + dataToTransmit + " (radio unavailable, switching to Telnet)");
+    }
     
     // Print to both Serial and Telnet
     printBoth("Depth: ");
