@@ -9,7 +9,7 @@
 #include <RH_RF69.h>
 
 // Define RFM69 frequency
-#define RF69_FREQ 915.0
+#define RF69_FREQ 434.0
 //================================================================================================================================================
 //                                                              I2C GPIO Expander Setup
 
@@ -95,7 +95,7 @@ void printBoth(const String &message);
 void printlnBoth(const String &message);
 void read_encoder();
 void initialize_radio();
-void send_radio_message(const String &data);
+void transmitRadioData(const String &data);
 
 //================================================================================================================================================
 //                                                              Setup Function
